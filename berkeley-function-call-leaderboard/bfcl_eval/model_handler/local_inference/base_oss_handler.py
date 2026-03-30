@@ -244,7 +244,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
             # Wait for the server to be ready
             server_ready = False
-            while not server_ready:
+            while not server_ready and not skip_server_setup:
                 # Check if the process has terminated unexpectedly
                 if not skip_server_setup and process.poll() is not None:
                     # Output the captured logs

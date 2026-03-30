@@ -75,6 +75,27 @@ def get_args():
         default=None,
         help="Specify the maximum LoRA rank for vLLM backend.",
     )
+    parser.add_argument(
+        "--steering-config",
+        type=str,
+        default=None,
+        help=(
+            "Path to a steering YAML config file. When provided, the handler "
+            "loads the HuggingFace model directly and applies activation-steering "
+            "hooks instead of using a vLLM server. "
+            "Only valid for steering-enabled model handlers (e.g. qwen3-8b-FC-steered)."
+        ),
+    )
+    parser.add_argument(
+        "--steering-batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Number of samples to process per model.generate() call during steering "
+            "inference. Values > 1 enable GPU-level batching for significant speedup "
+            "(e.g. 8 on an L40S). Only used when --steering-config is set."
+        ),
+    )
     args = parser.parse_args()
     print(f"Parsed arguments: {args}")
 
@@ -223,16 +244,23 @@ def multi_threaded_inference(handler, test_case, include_input_log, exclude_stat
 def generate_results(args, model_name, test_cases_total):
     handler = build_handler(model_name, args.temperature)
 
+    # Detect steering handlers (SteeringMixin subclasses)
+    from bfcl_eval.model_handler.local_inference.steering_mixin import SteeringMixin
+    steering_config_path = getattr(args, "steering_config", None)
+    is_steering_run = isinstance(handler, SteeringMixin) and steering_config_path is not None
+
     if isinstance(handler, OSSHandler):
         handler: OSSHandler
         is_oss_model = True
+        # Steering runs are single-threaded: model.generate() is not thread-safe
+        if is_steering_run:
+            num_threads = 1
         # For OSS models, if the user didn't explicitly set the number of threads,
         # we default to 100 threads to speed up the inference.
-        num_threads = (
-            args.num_threads
-            if args.num_threads is not None
-            else LOCAL_SERVER_MAX_CONCURRENT_REQUEST
-        )
+        elif args.num_threads is not None:
+            num_threads = args.num_threads
+        else:
+            num_threads = LOCAL_SERVER_MAX_CONCURRENT_REQUEST
     else:
         handler: BaseHandler
         is_oss_model = False
@@ -255,16 +283,56 @@ def generate_results(args, model_name, test_cases_total):
 
     try:
         if is_oss_model:
+            # For steering runs skip the vLLM server entirely; load HF model directly.
+            effective_skip = args.skip_server_setup or is_steering_run
             handler.spin_up_local_server(
                 num_gpus=args.num_gpus,
                 gpu_memory_utilization=args.gpu_memory_utilization,
                 backend=args.backend,
-                skip_server_setup=args.skip_server_setup,
+                skip_server_setup=effective_skip,
                 local_model_path=args.local_model_path,
                 lora_modules=args.lora_modules,
                 enable_lora=args.enable_lora,
                 max_lora_rank=args.max_lora_rank,
             )
+
+        if is_steering_run:
+            import yaml
+            with open(steering_config_path) as f:
+                steering_config = yaml.safe_load(f)
+            model_path = args.local_model_path or handler.model_name_huggingface
+            dtype = (steering_config.get("model") or {}).get("dtype", "bfloat16")
+            handler.load_hf_model(model_path, steering_config, dtype=dtype)
+            print(f"[steering] Ready. Config: {steering_config_path}")
+
+        steering_batch_size = getattr(args, "steering_batch_size", 1) or 1
+        print(f"[steering] steering_batch_size={steering_batch_size}, is_steering_run={is_steering_run}, batched_path={is_steering_run and steering_batch_size > 1}")
+
+        if is_steering_run and steering_batch_size > 1:
+            # ── Batched steering path ─────────────────────────────────────────
+            # Bypasses ThreadPoolExecutor: groups test cases into batches of
+            # steering_batch_size and runs each batch as one model.generate() call.
+            # Only valid for single-turn categories (no depends_on ordering needed).
+            with tqdm(
+                total=len(test_cases_total),
+                desc=f"Generating results for {model_name}",
+                dynamic_ncols=True,
+                mininterval=0.2,
+                smoothing=0.1,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+            ) as pbar:
+                for i in range(0, len(test_cases_total), steering_batch_size):
+                    batch = test_cases_total[i : i + steering_batch_size]
+                    result_dicts = handler.inference_batch(
+                        batch,
+                        args.include_input_log,
+                        args.exclude_state_log,
+                    )
+                    for rd in result_dicts:
+                        write_queue.put(rd)
+                        pbar.update()
+            # Batched path done — fall through to finally block for teardown
+            return  # exits the try block, finally still runs
 
         # ───── dependency bookkeeping ──────────────────────────────
         dependencies = {
@@ -351,6 +419,9 @@ def generate_results(args, model_name, test_cases_total):
         # Signal writer thread to finish and wait for it
         write_queue.put(None)
         writer_thread.join()
+
+        if is_steering_run:
+            handler.teardown_hf_model()
 
         if is_oss_model:
             handler.shutdown_local_server()

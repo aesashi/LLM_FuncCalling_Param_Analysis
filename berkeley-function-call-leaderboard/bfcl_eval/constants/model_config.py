@@ -59,6 +59,9 @@ from bfcl_eval.model_handler.local_inference.quick_testing_oss import (
 )
 from bfcl_eval.model_handler.local_inference.qwen import QwenHandler
 from bfcl_eval.model_handler.local_inference.qwen_fc import QwenFCHandler
+from bfcl_eval.model_handler.local_inference.qwen_fc_steering import QwenFCSteeringHandler
+from bfcl_eval.model_handler.local_inference.llama_steering import LlamaSteeringHandler
+from bfcl_eval.model_handler.local_inference.mistral_fc_steering import MistralFCSteeringHandler
 from bfcl_eval.model_handler.local_inference.pelican_vl_fc import PelicanVLFCHandler
 from bfcl_eval.model_handler.local_inference.nanbeige_fc import NanbeigeFCHandler
 from bfcl_eval.model_handler.local_inference.salesforce_llama import (
@@ -957,6 +960,18 @@ api_inference_model_map = {
         is_fc_model=True,
         underscore_to_dot=True,
     ),
+    "qwen3-8b-FC-steered": ModelConfig(
+        model_name="Qwen/Qwen3-8B",
+        display_name="Qwen3-8B (FC, Steered)",
+        url="https://huggingface.co/Qwen/Qwen3-8B",
+        org="Qwen",
+        license="apache-2.0",
+        model_handler=QwenFCSteeringHandler,
+        input_price=None,
+        output_price=None,
+        is_fc_model=True,
+        underscore_to_dot=True,
+    ),
     "qwen3-8b": ModelConfig(
         model_name="qwen3-8b",
         display_name="Qwen3-8B (Prompt)",
@@ -1297,6 +1312,18 @@ local_inference_model_map = {
         is_fc_model=True,
         underscore_to_dot=False,
     ),
+    "meta-llama/Llama-3.1-8B-Instruct-FC-steered": ModelConfig(
+        model_name="meta-llama/Llama-3.1-8B-Instruct",
+        display_name="Llama-3.1-8B-Instruct (FC, Steered)",
+        url="https://llama.meta.com/llama3",
+        org="Meta",
+        license="Meta Llama 3 Community",
+        model_handler=LlamaSteeringHandler,
+        input_price=None,
+        output_price=None,
+        is_fc_model=True,
+        underscore_to_dot=False,
+    ),
     "meta-llama/Llama-3.1-8B-Instruct": ModelConfig(
         model_name="meta-llama/Llama-3.1-8B-Instruct",
         display_name="Llama-3.1-8B-Instruct (Prompt)",
@@ -1463,6 +1490,18 @@ local_inference_model_map = {
         input_price=None,
         output_price=None,
         is_fc_model=False,
+        underscore_to_dot=False,
+    ),
+    "mistralai/Ministral-8B-Instruct-2410-FC-steered": ModelConfig(
+        model_name="mistralai/Ministral-8B-Instruct-2410",
+        display_name="Ministral-8B-Instruct-2410 (FC, Steered)",
+        url="https://huggingface.co/mistralai/Ministral-8B-Instruct-2410",
+        org="Mistral AI",
+        license="Mistral AI Research License",
+        model_handler=MistralFCSteeringHandler,
+        input_price=None,
+        output_price=None,
+        is_fc_model=True,
         underscore_to_dot=False,
     ),
     "microsoft/phi-4": ModelConfig(

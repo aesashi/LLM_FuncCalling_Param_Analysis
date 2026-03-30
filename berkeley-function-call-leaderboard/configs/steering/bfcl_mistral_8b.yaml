@@ -1,0 +1,31 @@
+# Steering config for mistralai/Ministral-8B-Instruct-2410-FC-steered
+# Usage:
+#   bfcl generate --model mistralai/Ministral-8B-Instruct-2410-FC-steered \
+#                 --steering-config configs/steering/bfcl_mistral_8b.yaml \
+#                 --test-category simple
+
+model:
+  name: "mistralai/Ministral-8B-Instruct-2410"
+  dtype: "bfloat16"
+
+sampling:
+  enable_thinking: false   # Mistral has no thinking tokens
+  max_new_tokens: 4096
+  temperature: 0.001
+  top_p: 1.0
+  top_k: 1
+  repetition_penalty: 1.0
+  do_sample: false
+  # thinking_tokens omitted — auto-detected as absent
+
+steering:
+  source:
+    type: path
+    path: /path/to/steering_vectors_dir   # <-- update this
+  steering_sets:
+    - token_span: answer_mean
+      coef: -1.0
+      apply_target: all    # no reasoning phase — use 'all'
+      layers:
+        - layer16
+      max_tokens: null

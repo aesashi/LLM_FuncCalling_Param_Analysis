@@ -163,6 +163,16 @@ def generate(
         "--lora-modules",
         help='Specify the path to the LoRA modules for vLLM backend in name="path" format. Can be specified multiple times.',
     ),
+    steering_config: Optional[str] = typer.Option(
+        None,
+        "--steering-config",
+        help="Path to a steering YAML config file. When provided, the handler loads the HuggingFace model directly and applies activation-steering hooks instead of using a vLLM server. Only valid for steering-enabled model handlers (e.g. qwen3-8b-FC-steered).",
+    ),
+    steering_batch_size: int = typer.Option(
+        1,
+        "--steering-batch-size",
+        help="Number of samples per model.generate() call during steering inference. Values > 1 enable GPU batching for significant speedup (e.g. 8 on an L40S). Only used when --steering-config is set.",
+    ),
 ):
     """
     Generate the LLM response for one or more models on a test-category (same as openfunctions_evaluation.py).
@@ -186,6 +196,8 @@ def generate(
         enable_lora=enable_lora,
         max_lora_rank=max_lora_rank,
         lora_modules=lora_modules,
+        steering_config=steering_config,
+        steering_batch_size=steering_batch_size,
     )
     load_dotenv(dotenv_path=DOTENV_PATH, verbose=True, override=True)  # Load the .env file
     generation_main(args)

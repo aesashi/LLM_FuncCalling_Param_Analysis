@@ -1,0 +1,35 @@
+# Steering config for qwen3-8b-FC-steered
+# Usage:
+#   bfcl generate --model qwen3-8b-FC-steered \
+#                 --steering-config configs/steering/bfcl_qwen3_8b.yaml \
+#                 --test-category simple
+
+model:
+  name: "Qwen/Qwen3-8B"
+  dtype: "bfloat16"
+
+sampling:
+  enable_thinking: true
+  max_new_tokens: 4096
+  temperature: 0.001       # near-greedy for reproducibility
+  top_p: 1.0
+  top_k: 1
+  repetition_penalty: 1.0
+  do_sample: false
+  thinking_tokens:
+    start: 151667          # <think>
+    end: 151668            # </think>
+
+steering:
+  # Point to a directory that contains steering_vectors.pt, OR use type: file
+  # with a direct path to the .pt file.
+  source:
+    type: file             # direct path to steering_vectors.pt
+    path: /home/ae0589/project/toe-param-analysis/activation_analysis/runs/compute_steering_vectors/demo_steering/run003/steering_vectors.pt
+  steering_sets:
+    - token_span: reasoning_mean
+      coef: 2.0
+      apply_target: reasoning   # choices: all | reasoning | answer
+      layers:
+        - layer31
+      max_tokens: null       # null = no limit
