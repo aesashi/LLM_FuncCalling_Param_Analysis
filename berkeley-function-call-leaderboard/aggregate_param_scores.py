@@ -22,7 +22,9 @@ STAT_FIELDS = ["mean", "median", "std", "n"]
 
 COLUMNS = (
     ["model", "split", "test_category", "accuracy", "correct_count", "total_count"]
-    + [f"{m}_{s}" for m in PARAM_METRICS for s in STAT_FIELDS]
+    # Group by stat so all means are adjacent, then all medians, etc.
+    # Makes it easy to compare tendency across error types at a glance.
+    + [f"{m}_{s}" for s in STAT_FIELDS for m in PARAM_METRICS]
     + ["redundant_information_total"]
 )
 

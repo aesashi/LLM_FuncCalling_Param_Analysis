@@ -403,8 +403,9 @@ def compute_param_level_stats(
         if p in param_details and p not in possible_answer_params
     )
 
-    # Steps 4 & 5 operate on generated params ∩ GT
-    intersection = [p for p in model_params if p in possible_answer_params]
+    # Steps 4 & 5 operate on generated params ∩ GT ∩ schema (param_details)
+    # param_details guards against dataset inconsistencies where GT has keys absent from the schema
+    intersection = [p for p in model_params if p in possible_answer_params and p in param_details]
     intersection_den = len(intersection)
 
     spec_mismatch_num = 0

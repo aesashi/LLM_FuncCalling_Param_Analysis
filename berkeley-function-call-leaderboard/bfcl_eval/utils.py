@@ -480,7 +480,7 @@ def write_list_of_dicts_to_file(filename, data, subdir=None, use_lock: bool = Tr
             for i, entry in enumerate(data):
                 # Go through each key-value pair in the dictionary to make sure the values are JSON serializable
                 entry = make_json_serializable(entry)
-                json_str = json.dumps(entry, ensure_ascii=False) + "\n"
+                json_str = json.dumps(entry, ensure_ascii=False).encode("utf-8", errors="replace").decode("utf-8") + "\n"
                 f.write(json_str)
 
     if use_lock:
