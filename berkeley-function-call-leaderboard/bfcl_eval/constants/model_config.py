@@ -60,6 +60,7 @@ from bfcl_eval.model_handler.local_inference.quick_testing_oss import (
 from bfcl_eval.model_handler.local_inference.qwen import QwenHandler
 from bfcl_eval.model_handler.local_inference.qwen_fc import QwenFCHandler
 from bfcl_eval.model_handler.local_inference.qwen_fc_steering import QwenFCSteeringHandler
+from bfcl_eval.model_handler.local_inference.qwen_steering import QwenSteeringHandler
 from bfcl_eval.model_handler.local_inference.llama_steering import LlamaSteeringHandler
 from bfcl_eval.model_handler.local_inference.mistral_fc_steering import MistralFCSteeringHandler
 from bfcl_eval.model_handler.local_inference.pelican_vl_fc import PelicanVLFCHandler
@@ -971,6 +972,18 @@ api_inference_model_map = {
         output_price=None,
         is_fc_model=True,
         underscore_to_dot=True,
+    ),
+    "qwen3-8b-steered": ModelConfig(
+        model_name="Qwen/Qwen3-8B",
+        display_name="Qwen3-8B (Prompt, Steered)",
+        url="https://huggingface.co/Qwen/Qwen3-8B",
+        org="Qwen",
+        license="apache-2.0",
+        model_handler=QwenSteeringHandler,
+        input_price=None,
+        output_price=None,
+        is_fc_model=False,
+        underscore_to_dot=False,
     ),
     "qwen3-8b": ModelConfig(
         model_name="qwen3-8b",

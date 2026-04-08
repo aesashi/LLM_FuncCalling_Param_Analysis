@@ -13,6 +13,8 @@ steering config is loaded it runs direct HF inference with forward hooks.
 
 from __future__ import annotations
 
+import gc
+import gc
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -130,15 +132,31 @@ class SteeringMixin:
             torch_dtype = torch.float32
 
         # Use FA2 if available (requires flash_attn package).
-        # Otherwise let the model use its own default attention (Qwen3 already has optimized attention).
+        # Otherwise we must tell transformers flash_attn is unavailable BEFORE
+        # calling from_pretrained: modeling_qwen3 (and similar) unconditionally
+        # import from modeling_flash_attention_utils at module level, which calls
+        # is_flash_attn_2_available() and tries to import the broken .so —
+        # crashing before attn_implementation kwarg is ever read.
         fa2_kwargs: Dict[str, Any] = {}
         if torch.cuda.is_available():
             try:
+                # Test the actual CUDA extension, not just the package presence.
+                import flash_attn.flash_attn_interface  # noqa: F401
                 import flash_attn  # noqa: F401
                 fa2_kwargs["attn_implementation"] = "flash_attention_2"
                 print(f"[steering] Flash Attention 2 enabled (flash_attn {flash_attn.__version__}).")
             except Exception as _fa2_err:
-                print(f"[steering] flash_attn import failed ({type(_fa2_err).__name__}: {_fa2_err}) — using model default attention.")
+                print(f"[steering] flash_attn import failed ({type(_fa2_err).__name__}: {_fa2_err}) — forcing eager attention.")
+                # Monkey-patch transformers' availability check so it won't try to
+                # import flash_attn at module-load time inside from_pretrained.
+                try:
+                    import transformers.utils.import_utils as _tu
+                    if hasattr(_tu, "_flash_attn_2_available"):
+                        _tu._flash_attn_2_available = False
+                    _tu.is_flash_attn_2_available = lambda: False
+                except Exception:
+                    pass
+                fa2_kwargs["attn_implementation"] = "eager"
 
         print(f"[steering] Loading model '{model_path_or_id}' (dtype={torch_dtype})")
         self._hf_model = AutoModelForCausalLM.from_pretrained(
@@ -399,6 +417,9 @@ class SteeringMixin:
         except Exception as e:
             tb = traceback.format_exc()
             tqdm.write(f"❗️ Batch GPU error: {e}\n{tb}")
+            # Free GPU memory before falling back to per-sample
+            gc.collect()
+            torch.cuda.empty_cache()
             # Fall back to per-sample
             for test_case, inference_data in zip(valid_test_cases, all_inference_data):
                 try:

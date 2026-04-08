@@ -84,6 +84,7 @@ SUPPORTED_MODELS = [
     "qwen3-4b",
     "qwen3-8b-FC",
     "qwen3-8b-FC-steered",
+    "qwen3-8b-steered",
     "qwen3-8b",
     "qwen3-14b-FC",
     "qwen3-14b",

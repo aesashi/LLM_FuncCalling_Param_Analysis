@@ -25,7 +25,7 @@ COLUMNS = (
     # Group by stat so all means are adjacent, then all medians, etc.
     # Makes it easy to compare tendency across error types at a glance.
     + [f"{m}_{s}" for s in STAT_FIELDS for m in PARAM_METRICS]
-    + ["redundant_information_total"]
+    + ["redundant_information_total", "redundant_information_any_redundant_rate"]
 )
 
 
@@ -41,15 +41,37 @@ def extract_param_stats(param_level_stats: dict) -> dict:
 
 
 def parse_score_file(path: Path) -> dict | None:
-    """Read the first line (aggregate row) of a score file."""
+    """Read a score file: parse the aggregate header and compute any_redundant_rate from per-sample lines."""
     with open(path) as f:
-        first_line = f.readline().strip()
-    if not first_line:
+        lines = f.readlines()
+    if not lines:
         return None
-    data = json.loads(first_line)
+    data = json.loads(lines[0].strip())
     # Only aggregate rows have accuracy at the top level
     if "accuracy" not in data:
         return None
+
+    # Compute binary rate from per-sample lines (lines[1:])
+    redundant_counts = []
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        sample = json.loads(line)
+        pls = sample.get("param_level_stats")
+        if pls is None:
+            continue
+        ri = pls.get("redundant_information")
+        if ri is not None:
+            redundant_counts.append(ri.get("count", 0))
+
+    if redundant_counts:
+        data["any_redundant_rate"] = round(
+            sum(1 for c in redundant_counts if c > 0) / len(redundant_counts), 4
+        )
+    else:
+        data["any_redundant_rate"] = None
+
     return data
 
 
@@ -83,7 +105,10 @@ def main():
 
         param_stats = data.get("param_level_stats") or {}
         row.update(extract_param_stats(param_stats))
+        row["redundant_information_any_redundant_rate"] = data.get("any_redundant_rate")
         rows.append(row)
+
+    rows.sort(key=lambda r: r["model"])
 
     with open(OUTPUT_CSV, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")

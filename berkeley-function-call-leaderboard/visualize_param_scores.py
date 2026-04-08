@@ -24,18 +24,49 @@ RATIO_METRICS = [
     "task_deviation",
 ]
 
-# Count metric: mean = avg extra params per sample (higher = more errors, no upper bound)
-COUNT_METRIC = "redundant_information"
+# Binary rate: fraction of samples with any redundant param (0–1, higher=worse, comparable across categories)
+BINARY_METRIC = "redundant_information"
 
-METRICS = RATIO_METRICS + [COUNT_METRIC]
+METRICS = RATIO_METRICS + [BINARY_METRIC]
 
 METRIC_LABELS = {
     "missing_information":    "Missing\nInfo",
     "hallucinated_params":    "Hallucinated\nParams",
     "specification_mismatch": "Spec\nMismatch",
     "task_deviation":         "Task\nDeviation",
-    "redundant_information":  "Redundant\nInfo\n(count)",
+    "redundant_information":  "Redundant\nInfo\n(% calls)",
 }
+
+# Preferred model order: grouped by family, sorted by size within family.
+# Non-FC variant immediately followed by its FC twin.
+MODEL_ORDER = [
+    "claude-haiku-4-5-20251001",
+    "claude-haiku-4-5-20251001-FC",
+    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-5-20250929-FC",
+    "claude-opus-4-5-20251101",
+    "claude-opus-4-5-20251101-FC",
+    "google_gemma-3-1b-it",
+    "google_gemma-3-4b-it",
+    "google_gemma-3-12b-it",
+    "google_gemma-3-27b-it",
+    "meta-llama_Llama-3.1-8B-Instruct",
+    "meta-llama_Llama-3.1-8B-Instruct-FC",
+    "Qwen_Qwen3-8B",
+    "Qwen_Qwen3-8B-FC",
+    "Qwen_Qwen3-14B",
+    "Qwen_Qwen3-14B-FC",
+    "Qwen_Qwen3-32B",
+    "Qwen_Qwen3-32B-FC",
+]
+
+
+def sort_models(index):
+    """Return index reordered by MODEL_ORDER; unknown models appended alphabetically."""
+    known = [m for m in MODEL_ORDER if m in index]
+    unknown = sorted(m for m in index if m not in MODEL_ORDER)
+    return known + unknown
+
 
 # ── load ──────────────────────────────────────────────────────────────────────
 df = pd.read_csv(CSV)
@@ -46,8 +77,8 @@ for m in RATIO_METRICS:
     if col in df.columns:
         df[f"{m}_error"] = 1.0 - df[col].fillna(1.0)
 
-# Count metric → use mean directly (avg extra params per sample), already "higher = worse"
-df["redundant_information_error"] = df["redundant_information_mean"].fillna(0.0)
+# Binary rate: fraction of samples with any redundant param (already 0–1, higher = worse)
+df["redundant_information_error"] = df["redundant_information_any_redundant_rate"].fillna(0.0)
 
 
 # ── Figure 1: Error heatmap (model × error type) ─────────────────────────────
@@ -57,45 +88,30 @@ mean_errors = (
     .rename(columns={f"{m}_error": METRIC_LABELS[m] for m in METRICS})
 )
 mean_errors.index.name = "Model"
+mean_errors = mean_errors.loc[sort_models(mean_errors.index)]
 
-# Split into two sub-tables: ratio errors (0–1) and count (unbounded)
-ratio_labels  = [METRIC_LABELS[m] for m in RATIO_METRICS]
-count_label   = METRIC_LABELS[COUNT_METRIC]
-ratio_data    = mean_errors[ratio_labels]
-count_data    = mean_errors[[count_label]]
-
-# Two side-by-side heatmaps with independent color scales
-fig1, (ax_r, ax_c) = plt.subplots(
-    1, 2,
-    figsize=(11, max(3, 0.7 * len(mean_errors) + 1.5)),
-    gridspec_kw={"width_ratios": [len(RATIO_METRICS), 1.2]},
+# All metrics are now 0–1: ratio errors (1 − mean) and binary redundancy rate
+fig1, ax1 = plt.subplots(
+    figsize=(len(METRICS) * 1.6 + 2, max(3, 0.7 * len(mean_errors) + 1.5)),
 )
 
+vmax = mean_errors.values.max() * 1.1 or 0.1
 sns.heatmap(
-    ratio_data, ax=ax_r,
+    mean_errors, ax=ax1,
     annot=True, fmt=".3f", cmap="YlOrRd",
     linewidths=0.5, linecolor="white",
-    vmin=0, vmax=ratio_data.values.max() * 1.1 or 0.1,
-    cbar_kws={"label": "Error rate  (1 − mean score)"},
+    vmin=0, vmax=vmax,
+    cbar_kws={"label": "Error rate  (higher = worse)"},
 )
-ax_r.set_title("Ratio-based errors\n(higher = worse)", pad=10)
-ax_r.set_ylabel("Model")
-ax_r.tick_params(axis="x", labelsize=9)
-ax_r.tick_params(axis="y", labelsize=9, rotation=0)
-
-sns.heatmap(
-    count_data, ax=ax_c,
-    annot=True, fmt=".3f", cmap="Blues",
-    linewidths=0.5, linecolor="white",
-    vmin=0,
-    cbar_kws={"label": "Avg extra params / sample"},
+ax1.set_title(
+    "Error rates by model (averaged across all test categories)\n"
+    "Ratio errors: 1 − mean score  ·  Redundant Info: % calls with any redundant param",
+    pad=10,
 )
-ax_c.set_title("Count-based error\n(avg extra params)", pad=10)
-ax_c.set_ylabel("")
-ax_c.tick_params(axis="x", labelsize=9)
-ax_c.tick_params(axis="y", labelleft=False)
+ax1.set_ylabel("Model")
+ax1.tick_params(axis="x", labelsize=9)
+ax1.tick_params(axis="y", labelsize=9, rotation=0)
 
-fig1.suptitle("Error rates by model (averaged across all test categories)", y=1.02)
 fig1.tight_layout()
 out1 = SCORE_DIR / "error_heatmap.png"
 fig1.savefig(out1, dpi=150, bbox_inches="tight")
@@ -111,7 +127,7 @@ cat_order = (
     .index.tolist()
 )
 
-models = sorted(df["model"].unique())
+models = sort_models(df["model"].unique())
 n_models = len(models)
 n_cats = len(cat_order)
 x = np.arange(n_cats)
@@ -177,7 +193,7 @@ for col_i, model in enumerate(models):
     ax_top.grid(axis="y", alpha=0.3, zorder=0)
     ax_top.set_ylabel("Error rate (1 − score)" if col_i == 0 else "")
 
-    # ── bottom: redundant count ────────────────────────────────────────────
+    # ── bottom: redundant info binary rate ────────────────────────────────
     ax_bot = axes[1][col_i]
     redund_vals = [
         sub.loc[c, "redundant_information_error"] if c in sub.index else 0.0
@@ -186,14 +202,16 @@ for col_i, model in enumerate(models):
     ax_bot.bar(range(len(cat_order)), redund_vals, color="#4C72B0", zorder=3)
     ax_bot.set_xticks(range(len(cat_order)))
     ax_bot.set_xticklabels(cat_order, rotation=40, ha="right", fontsize=7)
+    ax_bot.yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
+    ax_bot.set_ylim(0, 1.05)
     ax_bot.grid(axis="y", alpha=0.3, zorder=0)
-    ax_bot.set_ylabel("Avg extra params / sample" if col_i == 0 else "")
+    ax_bot.set_ylabel("% calls with any redundant param" if col_i == 0 else "")
 
 handles, labels = axes[0][0].get_legend_handles_labels()
 fig3.legend(handles, labels, loc="upper right", fontsize=8, title="Error type (ratio)")
 fig3.suptitle(
     "Error breakdown by category and model\n"
-    "Top: ratio errors (stacked) · Bottom: redundant info count",
+    "Top: ratio errors (stacked) · Bottom: % calls with any redundant param",
     y=1.01,
 )
 fig3.tight_layout()
